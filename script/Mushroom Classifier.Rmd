@@ -1,0 +1,107 @@
+---
+title: "Mushroom classification in R"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+Using [Variable Selection](https://cran.r-project.org/web/packages/varSelRF/varSelRF.pdf) to label the mushroom into *p* (poisonous) and *e* (edible).
+
+Load the data and quick check on it.
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(varSelRF)
+library(randomForest)
+
+rm(list=ls())
+my.dir <- "D:/Projects/5.0 Personal project/13.0 Mushroom/"
+my.file <- "mushrooms.csv"
+setwd(my.dir)
+
+input <- paste0(my.dir, my.file)
+raw.data <- read.csv(input, sep=",", header=T)
+```
+
+```{r}
+head(raw.data, 1)
+summary(raw.data)
+str(raw.data)
+```
+
+
+Given we do not have separate testing and training dataset, we will divide the main datasets to training (70%) and testing (30%) dataset (with the help of createDataPartition function in caret library)
+
+```{r, echo=F}
+raw.data$class <- as.factor(raw.data$class)
+print("=== Proportion of raw data set ===")
+summary(raw.data$class)
+
+# Data partition
+training <- createDataPartition(y=raw.data$class, p=0.7, list=F)
+training.data <- raw.data[training,]
+testing.data <- raw.data[-training,]
+
+print("=== Proportion of training data set ===")
+summary(training.data$class)
+
+print("=== Proportion of testing data set ===")
+summary(testing.data$class)
+```
+
+Let's select the variables using varSelRF function
+```{r}
+# Using variable selection and variable importance
+x <- dplyr::select(training.data, -class)
+y <- as.factor(training.data$class)
+
+var.sel <- varSelRF(x, y, ntree = 50, ntreeIterat = 20, vars.drop.frac = 0.3, whole.range = F, keep.forest = T)
+
+# Initial importance variables
+val.rank = var.sel$initialImportances[order(var.sel$initialImportances, decreasing =T)[1:ncol(x)], 1]
+as.data.frame(val.rank)
+
+varImpPlot(var.sel$rf.model)
+
+plot(var.sel) 
+
+plot(var.sel$rf.model, main="Error on # of tree")
+```
+
+Using only selected variables and the tree model for prediction
+```{r, echo=T}
+
+new.x <- subset(training.data, select=var.sel$selected.vars)
+training.pred <- predict(var.sel$rf.model, new.x)
+print("=== predict on training dataset ===")
+confusionMatrix(training.pred, training.data$class, positive="p")
+
+
+test.x <- subset(testing.data, select=var.sel$selected.vars)
+test.pred <- predict(var.sel$rf.model, test.x)
+print("=== predict on testing dataset ===")
+confusionMatrix(test.pred, testing.data$class, positive="p")
+
+```
+
+This section is merely a playground ...
+```{r, echo=F}
+print(var.sel$selected.vars)
+print(var.sel$rf.model)
+
+model.imp <- importance(var.sel$rf.model)
+plot(model.imp, ylab="MeanDecreaseGini")
+impvar <- rownames(model.imp)[order(model.imp[, 1], decreasing = T)]
+
+for(i in seq_along(impvar)){
+  partialPlot(var.sel$rf.model, training.data[-1], impvar[i], xlab=impvar[i], 
+              main=paste("Partial Dependence on", impvar[i]))
+}
+```
+
+
+
+
+
+
